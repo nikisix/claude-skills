@@ -11,7 +11,7 @@ model: haiku
 
 Maintains a central per-project session log — prompts, decisions, file changes, and
 blockers — so the work we do together is never lost between conversations. Sessions
-are stored in a configurable central directory (default `~/code/sessions/<project>/`),
+are stored in a configurable central directory (default `~/sessions/<project>/`),
 shared across all git worktrees for the same repo.
 
 The helper script lives at:

@@ -6,13 +6,13 @@ markdown file so work is never lost between sessions.
 
 ## How it works
 
-Session notes live in `~/code/sessions/<project>/` (configurable). Claude writes a
+Session notes live in `~/sessions/<project>/` (configurable). Claude writes a
 pending turn JSON at the end of each response; a Stop hook appends the formatted turn
 to the active session file. Sessions are numbered sequentially per project and stored
 as human-readable markdown.
 
 ```
-~/code/sessions/
+~/sessions/
   my-project/
     1-auth-refactor.md
     2-api-cleanup.md
@@ -56,7 +56,7 @@ as human-readable markdown.
 Config file: `~/.claude/skills/sessions/config.yaml`
 
 ```yaml
-sessions_root: ~/code/sessions   # where project folders live
+sessions_root: ~/sessions   # where project folders live
 
 project_aliases:
   claude-skills: sessions        # rename a repo's session folder

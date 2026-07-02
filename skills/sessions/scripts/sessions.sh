@@ -30,7 +30,7 @@ Commands:
   help                  Show this message
 
 Config file: ~/.claude/skills/sessions/config.yaml (optional)
-Sessions root: ~/code/sessions/<project> (default)
+Sessions root: ~/sessions/<project> (default)
 
 Examples:
   sessions init api-auth-refactor

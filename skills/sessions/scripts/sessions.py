@@ -95,7 +95,7 @@ def get_project_name(config: dict | None = None) -> str:
 
 def get_sessions_root() -> Path:
     config = load_config()
-    return Path(config.get("sessions_root", "~/code/sessions")).expanduser()
+    return Path(config.get("sessions_root", "~/sessions")).expanduser()
 
 
 def _project_override_filename(session_id: str = "") -> str:
@@ -107,7 +107,7 @@ def _project_override_filename(session_id: str = "") -> str:
 
 def get_sessions_dir() -> Path:
     config = load_config()
-    sessions_root = Path(config.get("sessions_root", "~/code/sessions")).expanduser()
+    sessions_root = Path(config.get("sessions_root", "~/sessions")).expanduser()
     override_file = sessions_root / _project_override_filename()
     if override_file.exists():
         project = override_file.read_text().strip()
@@ -360,7 +360,7 @@ def run_stop_hook():
 def capture_path(project: str, name: str) -> Path:
     """Return the path for the next session file in a project without creating it."""
     config = load_config()
-    sessions_root_str = config.get("sessions_root", "~/code/sessions")
+    sessions_root_str = config.get("sessions_root", "~/sessions")
     sessions_root = Path(sessions_root_str).expanduser()
     sessions_dir = sessions_root / project
     sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -504,7 +504,7 @@ def merge_sessions(sessions_dir: Path, source: str, target: str, keep_source: bo
 def list_projects() -> list:
     """List all projects in the sessions root."""
     config = load_config()
-    sessions_root_str = config.get("sessions_root", "~/code/sessions")
+    sessions_root_str = config.get("sessions_root", "~/sessions")
     sessions_root = Path(sessions_root_str).expanduser()
 
     if not sessions_root.exists():
@@ -602,7 +602,7 @@ def summarize_session(sessions_dir: Path, spec: str | None) -> str:
 def capture_session(project: str, name: str, overview: str) -> Path:
     """Create a new session in a specific project with overview from stdin."""
     config = load_config()
-    sessions_root_str = config.get("sessions_root", "~/code/sessions")
+    sessions_root_str = config.get("sessions_root", "~/sessions")
     sessions_root = Path(sessions_root_str).expanduser()
     sessions_dir = sessions_root / project
     sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -728,7 +728,7 @@ def main():
     elif cmd == "detect-project":
         config = load_config()
         project = get_project_name(config)
-        sessions_root = Path(config.get("sessions_root", "~/code/sessions")).expanduser()
+        sessions_root = Path(config.get("sessions_root", "~/sessions")).expanduser()
         print(f"Project: {project}")
         print(f"Sessions dir: {sessions_root / project}")
 
