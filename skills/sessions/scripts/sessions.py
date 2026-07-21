@@ -10,6 +10,7 @@ Usage:
   sessions.py resume <n>           — re-open an ended session, add Resumed timestamp
   sessions.py end                  — end current session (add footer, clear pointer)
   sessions.py merge <src> <tgt>    — append all turns from src into tgt, renumber, switch to tgt, delete src
+                                     (src/tgt may each carry a <proj>/ prefix for cross-project moves)
   sessions.py merge <src> <tgt> --keep  — same but keep source file
   sessions.py flush                — process pending turn immediately (no stdin; used before switch/end)
   sessions.py stop-hook            — process pending turn (called by Stop hook)
@@ -17,6 +18,7 @@ Usage:
   sessions.py sessions-dir         — print the current sessions dir path
   sessions.py pending-path         — print the full path to the pending turn file for this session
   sessions.py list-projects        — list all projects in sessions root
+  sessions.py list-sessions <proj> — list all sessions in a project
   sessions.py capture <proj> <name> <overview> — create session in <proj> with overview
   sessions.py capture-path <proj> <name>       — return target path without creating file
   sessions.py read-transcript [<session-id>]   — parse session JSONL into structured JSON
@@ -24,6 +26,21 @@ Usage:
                                      spec: none=overview, a-b=range, -n=last n, YYYY-MM-DD=since date
   sessions.py set-sessions-dir <dir> — create project folder in sessions_root, set as active for this session
   sessions.py set-project <dir>    — alias for set-sessions-dir
+
+Project routing:
+  scan, switch, resume, merge, and summarize accept an optional project prefix,
+  parsed the same way as `init <proj>/<session>`:
+    sessions.py scan <proj>               — scan a specific project (read-only, does not change active project)
+    sessions.py list-sessions <proj>      — alias for `scan <proj>`
+    sessions.py switch <proj>/<n>         — switch within <proj> and make it the active project
+    sessions.py resume <proj>/<n>         — resume within <proj> and make it the active project
+    sessions.py merge <sproj>/<src> <tproj>/<tgt>  — cross-project merge; each side's <proj>/ is
+                                                     independent and optional (falls back to the active
+                                                     project). Active project follows the target.
+    sessions.py summarize <proj>/<spec>   — summarize the active session of <proj> (read-only)
+  Write commands (switch/resume/merge) persist the project prefix as the active project;
+  read commands (scan/list-sessions/summarize) only view it. Every user-facing command
+  prints the resolved active project to stderr before running.
 """
 
 import json
@@ -125,6 +142,32 @@ def set_project(name: str) -> Path:
     project_dir.mkdir(parents=True, exist_ok=True)
     (sessions_root / _project_override_filename()).write_text(name)
     return project_dir
+
+
+def split_project(arg: str) -> "tuple[str | None, str]":
+    """Split a '<proj>/<rest>' argument into (proj, rest).
+
+    Returns (None, arg) when there is no slash. A trailing slash (`proj/`) yields
+    an empty rest string, which callers treat as "no session/spec given".
+    """
+    if arg and "/" in arg:
+        proj, _, rest = arg.partition("/")
+        return (proj or None), rest
+    return None, arg
+
+
+def project_sessions_dir(proj: str) -> Path:
+    """Return the sessions dir for an explicit project, for read-only viewing.
+
+    Does NOT create the directory or persist the active-project pointer — a typo'd
+    project name simply globs empty rather than leaving a stray folder behind.
+    """
+    return get_sessions_root() / proj
+
+
+def announce_project(sessions_dir: Path):
+    """Print the resolved active project to stderr (never stdout, to keep contracts clean)."""
+    print(f"[sessions] active project: {sessions_dir.name}  →  {sessions_dir}", file=sys.stderr)
 
 
 def _pending_filename(session_id: str = "") -> str:
@@ -462,10 +505,20 @@ def _find_session(sessions_dir: Path, target: str) -> Path:
     raise ValueError(f"No session matching '{target}'")
 
 
-def merge_sessions(sessions_dir: Path, source: str, target: str, keep_source: bool = False) -> tuple[Path, Path]:
-    """Append all turns from source into target, renumber them, switch current to target."""
-    source_path = _find_session(sessions_dir, source)
-    target_path = _find_session(sessions_dir, target)
+def merge_sessions(
+    source_dir: Path,
+    source: str,
+    target_dir: Path,
+    target: str,
+    keep_source: bool = False,
+) -> tuple[Path, Path]:
+    """Append all turns from source into target, renumber them, switch current to target.
+
+    Source and target may live in different projects (different dirs), which is how
+    turns logged into the wrong project folder get moved into the right one.
+    """
+    source_path = _find_session(source_dir, source)
+    target_path = _find_session(target_dir, target)
 
     if source_path == target_path:
         raise ValueError("Source and target are the same session")
@@ -493,7 +546,7 @@ def merge_sessions(sessions_dir: Path, source: str, target: str, keep_source: bo
         new_content += '\n\n' + renumbered
 
     target_path.write_text(new_content.rstrip() + '\n')
-    (sessions_dir / _current_session_filename()).write_text(str(target_path))
+    (target_dir / _current_session_filename()).write_text(str(target_path))
 
     if not keep_source:
         source_path.unlink()
@@ -551,7 +604,11 @@ def summarize_session(sessions_dir: Path, spec: str | None) -> str:
     """Emit session data for a given spec so Claude can synthesize a git-commit summary."""
     session_path = get_current_session(sessions_dir)
     if not session_path:
-        return "Error: No active session"
+        return (
+            f"Error: No active session in project '{sessions_dir.name}'. "
+            f"summarize reads the current session of a project; switch/resume into one first, "
+            f"or run summarize without a <proj>/ prefix to use the active project."
+        )
 
     content = session_path.read_text()
     mode, value = _parse_summarize_spec(spec)
@@ -631,6 +688,15 @@ def main():
     cmd = sys.argv[1]
     sessions_dir = get_sessions_dir()
 
+    # Machine-facing helpers have strict stdout contracts and/or run every turn;
+    # everything else is user-facing and announces the resolved active project.
+    _SILENT_CMDS = {
+        "stop-hook", "pending-path", "next-number", "sessions-dir",
+        "read-transcript", "capture-path", "flush",
+    }
+    if cmd not in _SILENT_CMDS:
+        announce_project(sessions_dir)
+
     if cmd == "next-number":
         print(next_number(sessions_dir))
 
@@ -658,8 +724,15 @@ def main():
         path = init_session(target_dir, name)
         print(f"Created: {path}")
 
-    elif cmd == "scan":
-        results = scan_overviews(sessions_dir)
+    elif cmd in ("scan", "list-sessions"):
+        # Optional bare project name (read-only view; does not change active project).
+        if len(sys.argv) >= 3:
+            proj = sys.argv[2].rstrip("/")
+            op_dir = project_sessions_dir(proj)
+        else:
+            op_dir = sessions_dir
+        print(f"Project: {op_dir.name} ({op_dir})")
+        results = scan_overviews(op_dir)
         if not results:
             print("No prior sessions found.")
         else:
@@ -684,23 +757,31 @@ def main():
         if len(sys.argv) < 3:
             print("Error: resume requires a session number or slug")
             sys.exit(1)
+        proj, target = split_project(sys.argv[2])
+        op_dir = (get_sessions_root() / proj) if proj else sessions_dir
         try:
-            path = resume_session(sessions_dir, sys.argv[2])
-            print(f"Resumed: {path}")
+            path = resume_session(op_dir, target)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+        if proj:
+            set_project(proj)  # persist the active project only after the resume succeeds
+        print(f"Resumed: {path}")
 
     elif cmd == "switch":
         if len(sys.argv) < 3:
             print("Error: switch requires a session number or slug")
             sys.exit(1)
+        proj, target = split_project(sys.argv[2])
+        op_dir = (get_sessions_root() / proj) if proj else sessions_dir
         try:
-            path = switch_session(sessions_dir, sys.argv[2])
-            print(f"Switched to: {path}")
+            path = switch_session(op_dir, target)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+        if proj:
+            set_project(proj)  # persist the active project only after the switch succeeds
+        print(f"Switched to: {path}")
 
     elif cmd == "merge":
         if len(sys.argv) < 4:
@@ -708,14 +789,23 @@ def main():
             print("Usage: sessions.py merge <source> <target> [--keep]")
             sys.exit(1)
         keep = "--keep" in sys.argv[4:]
+        # Source and target each take an independent optional '<proj>/' prefix, so turns
+        # written into the wrong project can be moved into the right one. Each side falls
+        # back to the ambient project when unprefixed. The active project follows the target.
+        proj_s, source = split_project(sys.argv[2])
+        proj_t, target = split_project(sys.argv[3])
+        source_dir = (get_sessions_root() / proj_s) if proj_s else sessions_dir
+        target_dir = (get_sessions_root() / proj_t) if proj_t else sessions_dir
         try:
-            src_path, tgt_path = merge_sessions(sessions_dir, sys.argv[2], sys.argv[3], keep_source=keep)
-            action = "kept" if keep else "deleted"
-            print(f"Merged {src_path.name} → {tgt_path.name} (source {action})")
-            print(f"Switched to: {tgt_path}")
+            src_path, tgt_path = merge_sessions(source_dir, source, target_dir, target, keep_source=keep)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+        if proj_t:
+            set_project(proj_t)  # persist the target's project as active, only after success
+        action = "kept" if keep else "deleted"
+        print(f"Merged {src_path} → {tgt_path} (source {action})")
+        print(f"Switched to: {tgt_path}")
 
     elif cmd == "end":
         session = get_current_session(sessions_dir)
@@ -768,8 +858,14 @@ def main():
                 print(proj)
 
     elif cmd == "summarize":
-        spec = sys.argv[2] if len(sys.argv) > 2 else None
-        print(summarize_session(sessions_dir, spec))
+        # Optional '<proj>/<spec>' prefix (read-only view; does not change active project).
+        if len(sys.argv) > 2:
+            proj, spec = split_project(sys.argv[2])
+            spec = spec or None
+        else:
+            proj, spec = None, None
+        op_dir = project_sessions_dir(proj) if proj else sessions_dir
+        print(summarize_session(op_dir, spec))
 
     elif cmd == "capture":
         if len(sys.argv) < 5:

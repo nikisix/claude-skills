@@ -30,6 +30,32 @@ Config file (create if absent):
 
 Each invocation maps directly to a single Python call. No decision trees—just execute:
 
+**Active-project visibility.** Every user-facing command prints the resolved active
+project to **stderr** before running (e.g. `[sessions] active project: skills → …`).
+It never touches stdout, so machine-readable output stays clean. Relay it to the user
+so they always know which project is being written to. Note the announce reflects the
+*ambient* project as it was before the command ran — for a prefixed write like
+`resume <proj>/<n>`, also relay the command's `Resumed:`/`Switched to:` path, which is
+what confirms the actual target.
+
+**Project routing (optional `<proj>/` prefix).** `scan`, `switch`, `resume`, `merge`,
+and `summarize` accept an optional project, parsed the same way as `init <proj>/<session>`:
+
+| Command | With project |
+|---------|--------------|
+| `scan` / `list-sessions` | `scan <proj>` — view a project (read-only, active project unchanged) |
+| `switch` | `switch <proj>/<n>` — switch within `<proj>` and **make it active** |
+| `resume` | `resume <proj>/<n>` — resume within `<proj>` and **make it active** |
+| `merge` | `merge <sproj>/<src> <tproj>/<tgt>` — cross-project; each `<proj>/` is independent and optional |
+| `summarize` | `summarize <proj>/<spec>` — summarize a project's active session (read-only) |
+
+Write commands (`switch`/`resume`/`merge`) persist the prefix as the active project.
+Read commands (`scan`/`list-sessions`/`summarize`) only view it. `merge` is the one
+command taking two prefixes — source and target are independent, so
+`merge <sproj>/<src> <tproj>/<tgt>` moves turns across projects (the common fix for
+turns logged into the wrong project). Each side falls back to the active project when
+unprefixed, and the active project follows the target after a successful merge.
+
 ### /sessions set-sessions-dir \<dir\>  (alias: /sessions set-project \<dir\>)
 
 ```bash
@@ -59,13 +85,19 @@ When `<dir>` is provided, it is created if absent and set as the active project 
 this session. Print the created file path. If user asks to scan prior sessions first,
 run `/sessions scan` separately.
 
-### /sessions scan
+### /sessions scan  (alias: /sessions list-sessions \<proj\>)
 
 ```bash
+# Active project
 python3 /Users/six/.claude/skills/sessions/scripts/sessions.py scan
+
+# A specific project (read-only; does not change the active project)
+python3 /Users/six/.claude/skills/sessions/scripts/sessions.py scan <proj>
+python3 /Users/six/.claude/skills/sessions/scripts/sessions.py list-sessions <proj>
 ```
 
-Print all session filenames and overviews.
+Print all session filenames and overviews. `list-sessions <proj>` is an alias for
+`scan <proj>`.
 
 ### /sessions current
 
@@ -91,7 +123,8 @@ python3 /Users/six/.claude/skills/sessions/scripts/sessions.py flush
 python3 /Users/six/.claude/skills/sessions/scripts/sessions.py switch <n>
 ```
 
-Where `<n>` is session number or slug fragment. Flush first, then switch.
+Where `<n>` is session number or slug fragment. Flush first, then switch. Use
+`switch <proj>/<n>` to switch into another project and make it the active project.
 
 ### /sessions resume \<n\>
 
@@ -100,7 +133,8 @@ python3 /Users/six/.claude/skills/sessions/scripts/sessions.py flush
 python3 /Users/six/.claude/skills/sessions/scripts/sessions.py resume <n>
 ```
 
-Where `<n>` is session number or slug fragment. Flush first, then resume.
+Where `<n>` is session number or slug fragment. Flush first, then resume. Use
+`resume <proj>/<n>` to resume a session in another project and make it the active project.
 
 ### /sessions detect-project
 
@@ -114,9 +148,14 @@ Print auto-detected project name and sessions directory.
 
 ```bash
 python3 /Users/six/.claude/skills/sessions/scripts/sessions.py summarize [spec]
+
+# Summarize another project's active session (read-only; active project unchanged)
+python3 /Users/six/.claude/skills/sessions/scripts/sessions.py summarize <proj>/[spec]
 ```
 
 Emit session data scoped to `spec`, then **synthesize a git-commit-style summary** from the output.
+With a `<proj>/` prefix, it reads that project's *current* session — if the project has no
+active session, the script prints a clear error (switch/resume into one first).
 
 **Argument forms:**
 

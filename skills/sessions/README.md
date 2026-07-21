@@ -30,16 +30,34 @@ as human-readable markdown.
 | `/sessions set-sessions-dir <dir>` | Create project folder and set as active for this session |
 | `/sessions set-project <dir>` | Alias for `set-sessions-dir` |
 | `/sessions scan` | List all sessions with overviews |
+| `/sessions scan <proj>` | List sessions in a specific project (read-only) |
+| `/sessions list-sessions <proj>` | Alias for `scan <proj>` |
 | `/sessions current` | Show the active session path and overview |
 | `/sessions end` | Flush pending turn and end the session |
 | `/sessions switch <n>` | Switch active session (flush first) |
+| `/sessions switch <proj>/<n>` | Switch into another project and make it active |
 | `/sessions resume <n>` | Re-open an ended session |
+| `/sessions resume <proj>/<n>` | Resume in another project and make it active |
 | `/sessions merge <src> <tgt>` | Append all turns from src into tgt, renumber, delete src |
+| `/sessions merge <sproj>/<src> <tproj>/<tgt>` | Cross-project merge (move turns from the wrong project into the right one) |
 | `/sessions merge <src> <tgt> --keep` | Same but keep source file |
 | `/sessions summarize` | Print the session overview |
 | `/sessions summarize <spec>` | Synthesize a git-commit-style summary for a turn range |
+| `/sessions summarize <proj>/<spec>` | Summarize another project's active session (read-only) |
 | `/sessions capture <proj> <name>` | Snapshot the current transcript as a session file |
 | `/sessions detect-project` | Show auto-detected project name and sessions dir |
+
+**Active-project visibility.** Every user-facing command prints the resolved active
+project to stderr before running (`[sessions] active project: <name> → <dir>`), so you
+always know which project is being written to.
+
+**Project routing.** `scan`, `switch`, `resume`, `merge`, and `summarize` accept an
+optional `<proj>/` prefix (parsed like `init <proj>/<session>`). Write commands
+(`switch`/`resume`/`merge`) persist it as the active project; read commands
+(`scan`/`list-sessions`/`summarize`) only view the named project without changing what's active.
+`merge` takes an independent prefix on **each** side — `merge <sproj>/<src> <tproj>/<tgt>` —
+so turns logged into the wrong project folder can be moved into the right one; the active
+project follows the target.
 
 ### Summarize specs
 
@@ -110,3 +128,5 @@ Key additions over time:
 - **`summarize`** — emits selected turns as JSON; Claude synthesizes a git-commit-style message with an imperative subject line
 - **`set-sessions-dir` / `set-project`** — explicitly targets a project folder within `sessions_root`, sets it active for the current Claude session
 - **Parallel session support** — pointer files are scoped by `CLAUDE_CODE_SESSION_ID` so multiple concurrent Claude sessions don't clobber each other
+- **Active-project announce + project routing** — every user-facing command prints the resolved active project to stderr, and `scan`/`switch`/`resume`/`merge`/`summarize` accept an optional `<proj>/` prefix (read commands view, write commands relocate the active project); added `list-sessions <proj>` as a `scan` alias
+- **Cross-project merge** — `merge` takes an independent `<proj>/` prefix on each side, so turns logged into the wrong project folder can be moved into the correct one instead of by hand
