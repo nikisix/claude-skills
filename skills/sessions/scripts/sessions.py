@@ -6,6 +6,7 @@ Usage:
   sessions.py init <folder>/<name> — create session file in folder, set as current
   sessions.py scan                 — print all session filenames + overviews
   sessions.py current              — print path to active session file
+  sessions.py status-line          — print "<project>/<session>" for statusline use (silent, no announce)
   sessions.py switch <n>           — switch current session to number n
   sessions.py resume <n>           — re-open an ended session, add Resumed timestamp
   sessions.py end                  — end current session (add footer, clear pointer)
@@ -692,7 +693,7 @@ def main():
     # everything else is user-facing and announces the resolved active project.
     _SILENT_CMDS = {
         "stop-hook", "pending-path", "next-number", "sessions-dir",
-        "read-transcript", "capture-path", "flush",
+        "read-transcript", "capture-path", "flush", "status-line",
     }
     if cmd not in _SILENT_CMDS:
         announce_project(sessions_dir)
@@ -748,6 +749,10 @@ def main():
             m = re.search(r"## Overview\n+(.*?)(?:\n---|\n## |\Z)", content, re.DOTALL)
             overview = m.group(1).strip() if m else "(no overview)"
             print(f"File: {session}\n\n{overview}")
+
+    elif cmd == "status-line":
+        session = get_current_session(sessions_dir)
+        print(f"{sessions_dir.name}/{session.stem}" if session else sessions_dir.name)
 
     elif cmd == "flush":
         result = flush_pending(sessions_dir)
